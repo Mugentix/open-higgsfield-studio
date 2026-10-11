@@ -33,7 +33,12 @@ export class R2Store implements MediaStore {
       credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
     });
     this.bucket = options.bucket;
-    this.publicBaseUrl = options.publicBaseUrl.replace(/\/$/, "");
+    const base = options.publicBaseUrl.trim();
+    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(base) ? base : `https://${base}`);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new Error("R2_PUBLIC_BASE_URL must be a public HTTP(S) URL without credentials, query or fragment");
+    }
+    this.publicBaseUrl = url.href.replace(/\/+$/, "");
   }
 
   async put(key: string, body: ReadableStream<Uint8Array> | Uint8Array, contentType: string) {

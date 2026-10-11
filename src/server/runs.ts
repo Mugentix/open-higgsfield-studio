@@ -532,7 +532,7 @@ async function scheduleNextPoll(run: RunRow, kieState: string | null, error: str
 
 async function settleSuccess(run: RunRow, record: KieRecord): Promise<void> {
   const urls = record.resultUrls;
-  const settled = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     const [claimed] = await tx
       .update(schema.runs)
       .set({
@@ -612,12 +612,14 @@ async function settleSuccess(run: RunRow, record: KieRecord): Promise<void> {
       type: "succeeded",
       payload: { results: urls.length, credits: record.creditsConsumed ?? null },
     });
-    return toMirror;
+    // Completion and its durable-copy jobs commit together. A killed request
+    // can no longer leave completed files with nothing for the worker to do.
+    if (toMirror.length) {
+      await tx.insert(schema.jobs).values(toMirror.map((resultId) => ({
+        id: randomUUID(), teamId: run.teamId, type: "mirror_result", dedupeKey: resultId, payload: { resultId },
+      }))).onConflictDoNothing();
+    }
   });
-  if (!settled) return;
-  for (const resultId of settled) {
-    await enqueue("mirror_result", resultId, { resultId }, { teamId: run.teamId });
-  }
 }
 
 async function failRun(
@@ -670,7 +672,7 @@ export async function mirrorResult(resultId: string): Promise<void> {
     const { bytes } = await store.put(key, response.body, mime ?? "application/octet-stream");
     await db
       .update(schema.results)
-      .set({ key, url: store.publicUrl(key), mirrorStatus: "done", mirrorError: null, bytes, mime: mime ?? null, updatedAt: DB_NOW })
+      .set({ key, url: store.publicUrl(key), status: "completed", error: null, mirrorStatus: "done", mirrorError: null, bytes, mime: mime ?? null, updatedAt: DB_NOW })
       .where(and(eq(schema.results.id, result.id), sql`${schema.results.mirrorStatus} <> 'done'`));
   } catch (caught) {
     const message = caught instanceof Error ? caught.message : String(caught);
@@ -697,8 +699,8 @@ export async function purgeMedia(key: string): Promise<void> {
 
 /* ---------- sync (what the studio polls) ---------- */
 
-/** The rows the studio asked about, refreshed from KIE where they are due —
-    a few per round, so an open tab hurries reconciliation without hammering. */
+/** Return database state promptly; slow provider calls run after the response.
+    An open tab still hurries reconciliation, without blocking gallery actions. */
 export async function syncRuns(team: TeamContext, runIds: string[]): Promise<RunView[]> {
   const due = await db.query.runs.findMany({
     where: and(
@@ -710,12 +712,12 @@ export async function syncRuns(team: TeamContext, runIds: string[]): Promise<Run
     orderBy: asc(schema.runs.nextPollAt),
     limit: SYNC_REFRESH_BUDGET,
   });
-  await Promise.all(due.map((run) => reconcileRun(run.id)));
+  await Promise.all(due.map((run) => enqueue("reconcile_run", run.id, { runId: run.id }, { teamId: run.teamId })));
   const pending = await db.query.runs.findMany({
     where: and(eq(schema.runs.teamId, team.teamId), inArray(schema.runs.id, runIds), openForSubmit()),
     limit: SYNC_REFRESH_BUDGET,
   });
-  await Promise.all(pending.map((run) => submitOrQueue(run.id, run.teamId)));
+  await Promise.all(pending.map((run) => enqueue("submit_run", run.id, { runId: run.id }, { teamId: run.teamId })));
 
   const runs = await db.query.runs.findMany({
     where: and(eq(schema.runs.teamId, team.teamId), inArray(schema.runs.id, runIds)),

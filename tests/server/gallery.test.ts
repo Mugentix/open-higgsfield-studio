@@ -105,6 +105,18 @@ async function pageAll(team: TeamContext): Promise<GalleryItem[][]> {
   }
 }
 
+it("pages completed references without pending or failed results consuming the page", async () => {
+  const team = await seedTeam(db);
+  vi.mocked(requireTeam).mockResolvedValue(team);
+  const finished = await seedTiles(team, 49, new Date(1000));
+  const unfinished = await seedTiles(team, 60, new Date(2000));
+  await db.update(schema.results).set({ status: "running" }).where(inArray(schema.results.id, unfinished));
+  const first = unwrap(await listGallery({ filter: { view: "image", status: "completed" } }));
+  const second = unwrap(await listGallery({ filter: { view: "image", status: "completed" }, cursor: first.nextCursor }));
+  expect([...first.items, ...second.items].map((item) => item.id).sort()).toEqual(finished.sort());
+  expect(second.nextCursor).toBeNull();
+});
+
 async function drainChanges(team: TeamContext, since: ChangeCursor): Promise<{ batches: GalleryItem[][]; until: ChangeCursor }> {
   const batches: GalleryItem[][] = [];
   let cursor = since;

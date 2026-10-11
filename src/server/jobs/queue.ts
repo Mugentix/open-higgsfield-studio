@@ -26,6 +26,28 @@ export function backoffMs(attempt: number): number {
 
 const LEASE_SECONDS = 120;
 
+/** Recover interrupted copy scheduling and give exhausted saves another
+    chance after an hour. Keep queued retry times and active leases intact. */
+export async function recoverMirrors(): Promise<number> {
+  const recovered = await rows(sql`
+    INSERT INTO jobs (id, team_id, type, dedupe_key, payload)
+    SELECT gen_random_uuid()::text, r.team_id, 'mirror_result', r.id,
+           jsonb_build_object('resultId', r.id)
+    FROM results r
+    LEFT JOIN jobs j ON j.type = 'mirror_result' AND j.dedupe_key = r.id
+    WHERE r.source_url IS NOT NULL AND r.mirror_status <> 'done' AND r.deleted_at IS NULL
+      AND (j.id IS NULL OR (j.status IN ('dead', 'failed', 'done') AND j.updated_at < now() - interval '1 hour'))
+    ORDER BY COALESCE(j.updated_at, r.created_at)
+    LIMIT 100
+    ON CONFLICT (type, dedupe_key) DO UPDATE
+      SET status = 'queued', attempts = 0, run_after = now(), locked_until = NULL,
+          locked_by = NULL, last_error = NULL, updated_at = now()
+      WHERE jobs.status IN ('dead', 'failed', 'done') AND jobs.updated_at < now() - interval '1 hour'
+    RETURNING id
+  `);
+  return recovered.length;
+}
+
 /** Idempotent: the same (type, dedupe key) is one job. A finished job asked
     for again is reset and runs again; a running one is left alone. */
 export async function enqueue(

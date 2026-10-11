@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
 
 import { RetryLaterError, markMirrorLost, mirrorResult, purgeMedia, reconcileRun, submitRun } from "../runs";
 import { claim, complete, fail, type Job, type JobType } from "./queue";
@@ -71,9 +72,12 @@ async function runOne(job: Job): Promise<void> {
     otherwise right away. Server actions and routes call this after they
     queue work, so the work never waits for a cron. */
 export function kickJobs(): void {
-  void import("next/server")
-    .then(({ after }) => after(() => runJobs()))
-    .catch(() => void runJobs());
+  try {
+    // Register while the request is active so Vercel retains the work.
+    after(() => runJobs());
+  } catch {
+    void runJobs();
+  }
   startDevWorker();
 }
 

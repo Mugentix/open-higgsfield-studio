@@ -16,6 +16,7 @@ export type GalleryView = "image" | "video" | "assets" | "favorites";
 
 export type GalleryFilter = {
   view: GalleryView;
+  status?: "running" | "completed" | "failed";
   projectId?: string;
   productId?: string;
   modelIds?: string[];
@@ -102,6 +103,7 @@ export function itemOf(row: Row): GalleryItem {
 
 function whereFor(team: TeamContext, filter: GalleryFilter): SQL[] {
   const clauses: SQL[] = [eq(schema.results.teamId, team.teamId), isNull(schema.results.deletedAt)];
+  if (filter.status) clauses.push(eq(schema.results.status, filter.status));
   if (filter.view === "image" || filter.view === "video") clauses.push(eq(schema.results.kind, filter.view));
   if (filter.view === "favorites") clauses.push(eq(schema.results.favorite, true));
   if (filter.projectId) clauses.push(eq(schema.results.projectId, filter.projectId));

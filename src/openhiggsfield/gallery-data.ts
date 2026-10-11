@@ -104,6 +104,7 @@ function isNewerThan(item: GalleryItem, cursor: GalleryCursor): boolean {
 
 function matches(item: GalleryItem, filter: GalleryFilter): boolean {
   if (item.deletedAt) return false;
+  if (filter.status && item.status !== filter.status) return false;
   if ((filter.view === "image" || filter.view === "video") && item.kind !== filter.view) return false;
   if (filter.view === "favorites" && !item.favorite) return false;
   if (filter.projectId && item.projectId !== filter.projectId) return false;
@@ -115,7 +116,7 @@ function matches(item: GalleryItem, filter: GalleryFilter): boolean {
   return true;
 }
 
-export function useGallery(filter: GalleryFilter) {
+export function useGallery(filter: GalleryFilter, options: { enabled?: boolean; sync?: boolean } = {}) {
   const client = useQueryClient();
   const key = galleryKey(filter);
 
@@ -130,6 +131,8 @@ export function useGallery(filter: GalleryFilter) {
   }, []);
 
   const query = useInfiniteQuery({
+    enabled: options.enabled,
+    refetchOnMount: options.sync === false ? "always" : true,
     queryKey: key,
     queryFn: async ({ pageParam }) => {
       const page = unwrap(await listGallery({ filter, cursor: pageParam }));
@@ -138,7 +141,6 @@ export function useGallery(filter: GalleryFilter) {
     },
     initialPageParam: null as GalleryCursor | null,
     getNextPageParam: (last) => last.nextCursor,
-    placeholderData: (previous) => previous,
   });
 
   /* Pages served from the cache never ran queryFn; the feed still needs a start. */
@@ -176,6 +178,7 @@ export function useGallery(filter: GalleryFilter) {
   /* The change feed: team-wide, because every project's cache is patched
      from it; every few seconds while the tab is visible. */
   useEffect(() => {
+    if (options.sync === false || options.enabled === false) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
@@ -201,7 +204,7 @@ export function useGallery(filter: GalleryFilter) {
       live = false;
       if (timer) clearTimeout(timer);
     };
-  }, [patch]);
+  }, [patch, options.sync, options.enabled]);
 
   const favorite = useCallback(
     async (targets: Tile[], keep: boolean) => {
@@ -267,6 +270,7 @@ export function useGallery(filter: GalleryFilter) {
   return {
     items,
     loading: query.isPending,
+    error: query.error,
     fetchingMore: query.isFetchingNextPage,
     hasMore: Boolean(query.hasNextPage),
     loadMore: () => {
