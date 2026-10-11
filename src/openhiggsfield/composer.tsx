@@ -12,7 +12,6 @@ import { useSettings } from "@/generation/stores/settings";
 import { swatchFor } from "./artwork";
 import { AssetPicker, droppedFiles, hasFiles } from "./asset-picker";
 import { PROMPT_PLACEHOLDERS, countSetting, planeConflict, roleNoun, rolesOf } from "./data";
-import type { RunRecord } from "./history";
 import { underDialog } from "./hotkeys";
 import { ArrowUpIcon, CaretDownIcon, CloseIcon, MinusIcon, PlusIcon, TemplateIcon, WarningIcon } from "./icons";
 import { MediaStrip, useMediaTray } from "./media-tray";
@@ -58,7 +57,6 @@ export function Composer({
   generating,
   error,
   focusNonce,
-  history,
   productId,
   product,
   onPin,
@@ -73,9 +71,6 @@ export function Composer({
   generating: boolean;
   error: string | null;
   focusNonce: number;
-  /* Finished runs are attachable inputs, so the asset picker reads the same
-     log the gallery renders. */
-  history: RunRecord[];
   /** The product the next run lands in; the picker shows its shelf. */
   productId: string | null;
   /** The same product's brief — name, offer url, brand notes — so a template's
@@ -375,7 +370,6 @@ export function Composer({
             items={tray.items}
             uploads={tray.uploads}
             productId={productId}
-            history={history}
             staged={tray.staged}
             stagedRole={tray.stagedRole}
             uploading={tray.uploading}

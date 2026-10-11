@@ -1204,7 +1204,6 @@ export function OpenHiggsfieldApp({ fontClassName = "", viewer, initialView }: {
             generating={busy}
             error={error}
             focusNonce={focusNonce}
-            history={items}
             productId={productId}
             product={product}
             onPin={pinAsset}

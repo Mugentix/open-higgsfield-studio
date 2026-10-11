@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -27,7 +27,7 @@ beforeAll(async () => {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
-  scratch = await mkdtemp(path.join(os.tmpdir(), "ohf-storage-"));
+  scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), "ohf-storage-")));
   process.chdir(scratch);
   local = await import("@/server/storage/local");
   putRoute = await import("@/app/api/media/put/route");

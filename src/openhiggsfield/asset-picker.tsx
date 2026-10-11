@@ -17,7 +17,7 @@ import {
   rolesOf,
   type AssetKind,
 } from "./data";
-import type { RunRecord } from "./history";
+import { useGallery } from "./gallery-data";
 import { AssetsIcon, AudioIcon, CheckIcon, CloseIcon, GemIcon, PlayBadgeIcon, UploadIcon } from "./icons";
 import type { UploadProgress } from "./media-tray";
 import type { AssetRecord } from "@/server/asset-actions";
@@ -62,14 +62,11 @@ export function droppedFiles(event: DragEvent): File[] {
   return hasFiles(event) ? Array.from(event.dataTransfer.files) : [];
 }
 
-/** Everything a role can be filled from: files this browser sent to Blob, and
-    the finished runs already in the history. Both are public URLs the plane can
-    carry, so the picker treats them as one library cut along two tabs. */
+/** The team's uploads and generated references, independent of the wall's filters. */
 export function AssetPicker({
   model,
   items,
   uploads,
-  history,
   staged,
   stagedRole,
   uploading,
@@ -88,7 +85,6 @@ export function AssetPicker({
       a role's inputs are edited here, not only added to. */
   items: MediaItem[];
   uploads: AssetRecord[];
-  history: RunRecord[];
   /** The last batch uploaded from here, in upload order, and its role. */
   staged: string[];
   stagedRole: MediaRole | null;
@@ -129,6 +125,10 @@ export function AssetPicker({
   const overDepth = useRef(0);
 
   const kind = ROLE_KINDS[role];
+  const generations = useGallery(
+    { view: kind === "video" ? "video" : "image", status: "completed" },
+    { enabled: kind !== "audio", sync: false },
+  );
   const max = model.roles[role] ?? 0;
   const current = useMemo(() => urlsOf(items, role), [items, role]);
   const room = Math.max(0, max - selected.length);
@@ -167,18 +167,18 @@ export function AssetPicker({
   /* One record can carry several media, and each is its own attachable frame. */
   const runAssets = useMemo(() => {
     const out: Asset[] = [];
-    for (const record of history) {
+    for (const record of generations.items) {
       if (record.status !== "completed" || record.kind !== kind) continue;
       for (const url of record.urls) out.push({ url, kind, title: record.prompt, art: record.art, resultId: record.id });
     }
     return out;
-  }, [history, kind]);
+  }, [generations.items, kind]);
 
   const shelf: Source =
     source ??
     (productAssets.length > 0
       ? "product"
-      : uploadAssets.length === 0 && runAssets.length > 0
+      : uploadAssets.length === 0 && kind !== "audio"
         ? "generations"
         : "uploads");
   const assets = shelf === "uploads" ? uploadAssets : shelf === "product" ? productAssets : runAssets;
@@ -428,7 +428,9 @@ export function AssetPicker({
       )}
 
       <div className="ohf-assets-body ohf-scroll">
-        {assets.length === 0 ? (
+        {shelf === "generations" && kind !== "audio" && generations.loading ? (
+          <div className="ohf-picker-empty" role="status">Loading generations…</div>
+        ) : assets.length === 0 && !(shelf === "generations" && kind !== "audio" && generations.error) ? (
           <div className="ohf-picker-empty">
             <span className="ohf-picker-empty-ic">
               {shelf === "uploads" ? <UploadIcon size={15} /> : <AssetsIcon size={15} />}
@@ -488,6 +490,19 @@ export function AssetPicker({
                 />
               );
             })}
+          </div>
+        )}
+        {shelf === "generations" && kind !== "audio" && generations.error && (
+          <div className="ohf-picker-empty" role="alert">
+            <span>Could not load generations.</span>
+            <button type="button" className="ohf-btn-solid" onClick={() => void generations.refetch()}>Try again</button>
+          </div>
+        )}
+        {shelf === "generations" && kind !== "audio" && generations.hasMore && (
+          <div className="ohf-assets-foot">
+            <button type="button" className="ohf-btn-solid" disabled={generations.fetchingMore} onClick={generations.loadMore}>
+              {generations.fetchingMore ? "Loading…" : "Load more generations"}
+            </button>
           </div>
         )}
       </div>

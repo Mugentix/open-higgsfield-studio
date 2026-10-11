@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -447,6 +447,7 @@ describe("submitRun claims the run before KIE is called", () => {
       .set({ updatedAt: new Date(Date.now() - SUBMIT_CLAIM_STALE_MS - 1_000) })
       .where(eq(schema.runs.id, created.requestId));
     await syncRuns(team, [created.requestId]);
+    await runJobs();
     expect(kie.tasks).toHaveLength(1);
     expect(await loadRun(created.requestId)).toMatchObject({ status: "submitted", kieTaskId: "task_1" });
     await submitRun(created.requestId);
@@ -523,6 +524,24 @@ describe("submitRun claims the run before KIE is called", () => {
 /* ---------- applyRecord ---------- */
 
 describe("applyRecord", () => {
+  it("keeps completion retryable when its storage job cannot be recorded", async () => {
+    const team = await seedTeam(db);
+    const created = await press(team, "atomic-copy");
+    const run = await loadRun(created.requestId);
+    await db.execute(sql`CREATE FUNCTION reject_copy_job() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'copy queue unavailable'; END;
+    $$`);
+    await db.execute(sql`CREATE TRIGGER reject_copy_job BEFORE INSERT ON jobs FOR EACH ROW EXECUTE FUNCTION reject_copy_job()`);
+    await expect(applyRecord(run, success(run.kieTaskId!, [OUT_1]))).rejects.toThrow();
+    expect(await loadRun(run.id)).toMatchObject({ status: "submitted" });
+    expect((await loadResults(run.id))[0]).toMatchObject({ status: "running", sourceUrl: null });
+    await db.execute(sql`DROP TRIGGER reject_copy_job ON jobs`);
+    kie.files.set(OUT_1, { bytes: PNG, contentType: "image/png" });
+    await reconcileRun(run.id);
+    await applyRecord(await loadRun(run.id), success(run.kieTaskId!, [OUT_1]));
+    await runJobs();
+    expect((await loadResults(run.id))[0]).toMatchObject({ status: "completed", mirrorStatus: "done" });
+  });
   it("fails the tile that got no url when KIE delivers fewer results than tiles", async () => {
     const team = await seedTeam(db);
     const created = await press(team, "few");
@@ -834,6 +853,29 @@ describe("mirrorResult", () => {
 /* ---------- syncRuns ---------- */
 
 describe("syncRuns", () => {
+  it("answers the studio while the provider is still waiting to report completion", async () => {
+    const team = await seedTeam(db);
+    const created = await press(team, "slow-provider");
+    await db.update(schema.runs).set({ nextPollAt: new Date(0) });
+    kie.defaultRecord = { state: "success", resultJson: JSON.stringify({ resultUrls: [OUT_1] }) };
+    kie.files.set(OUT_1, { bytes: PNG, contentType: "image/png" });
+    const inner = globalThis.fetch;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (urlOf(input).includes("recordInfo")) await gate;
+      return inner(input, init);
+    });
+    const pending = syncRuns(team, [created.requestId]);
+    const answer = await Promise.race([pending, new Promise<null>((resolve) => setTimeout(() => resolve(null), 300))]);
+    release();
+    await pending;
+    expect(answer?.[0]).toMatchObject({ requestId: created.requestId, status: "running" });
+    await runJobs();
+    const [saved] = await syncRuns(team, [created.requestId]);
+    expect(saved).toMatchObject({ status: "completed", results: [expect.objectContaining({ mirrored: true })] });
+  });
+
   it("returns and refreshes only the calling team's runs", async () => {
     const mine = await seedTeam(db, { name: "Mine" });
     const theirs = await seedTeam(db, { name: "Theirs" });
@@ -842,6 +884,7 @@ describe("syncRuns", () => {
     await db.update(schema.runs).set({ nextPollAt: new Date(Date.now() - 1_000) });
 
     const views = await syncRuns(mine, [ours.requestId, other.requestId]);
+    await runJobs();
 
     expect(views.map((v) => v.requestId)).toEqual([ours.requestId]);
     expect(views[0]).toMatchObject({ status: "running", stalled: false, results: [{ id: ours.resultIds[0], index: 0, status: "running", url: null, mirrored: false }] });
@@ -862,6 +905,7 @@ describe("syncRuns", () => {
     }
 
     const views = await syncRuns(team, ids);
+    await runJobs();
 
     expect(views).toHaveLength(7);
     expect(calls("https://api.kie.ai/api/v1/jobs/recordInfo")).toHaveLength(5);
@@ -869,6 +913,7 @@ describe("syncRuns", () => {
     expect(attempts).toEqual([1, 1, 1, 1, 1, 0, 0]);
 
     await syncRuns(team, ids);
+    await runJobs();
     expect(calls("https://api.kie.ai/api/v1/jobs/recordInfo")).toHaveLength(7);
     expect(await Promise.all(ids.map(async (id) => (await loadRun(id)).pollAttempts))).toEqual([1, 1, 1, 1, 1, 1, 1]);
   });
@@ -881,6 +926,7 @@ describe("syncRuns", () => {
     await refillBucket(key);
 
     const views = await syncRuns(team, [created.requestId]);
+    await runJobs();
 
     expect(kie.tasks).toHaveLength(1);
     expect(kie.tasks[0]!.body).toMatchObject({ model: "nano-banana-pro", input: { prompt: "prompt waiting-room" } });
@@ -888,9 +934,9 @@ describe("syncRuns", () => {
     expect(views).toEqual([
       expect.objectContaining({ requestId: created.requestId, status: "running", results: [expect.objectContaining({ status: "running" })] }),
     ]);
-    /* The queued submit job is now redundant and harmless. */
+    /* The completed submit job cannot buy the generation a second time. */
     await db.update(schema.jobs).set({ runAfter: new Date(Date.now() - 1_000) });
-    expect(await runJobs()).toBe(1);
+    expect(await runJobs()).toBe(0);
     expect(kie.tasks).toHaveLength(1);
   });
 
@@ -902,6 +948,8 @@ describe("syncRuns", () => {
     kie.records.set("task_2", { state: "fail", failCode: "500", failMsg: "boom" });
     await db.update(schema.runs).set({ nextPollAt: new Date(Date.now() - 1_000) });
 
+    await syncRuns(team, [won.requestId, lost.requestId]);
+    await runJobs(2);
     const views = await syncRuns(team, [won.requestId, lost.requestId]);
     const byId = new Map(views.map((v) => [v.requestId, v]));
     expect(byId.get(won.requestId)).toEqual({

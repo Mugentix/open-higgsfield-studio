@@ -3,7 +3,7 @@ import { and, eq, lt, lte } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db, dbReady, schema } from "@/server/db/client";
-import { enqueue } from "@/server/jobs/queue";
+import { enqueue, recoverMirrors } from "@/server/jobs/queue";
 import { runJobs } from "@/server/jobs/runner";
 import { openForSubmit } from "@/server/runs";
 
@@ -42,8 +42,9 @@ export async function GET(request: Request): Promise<NextResponse> {
     .where(and(eq(schema.assets.status, "pending"), lt(schema.assets.createdAt, new Date(Date.now() - 24 * 60 * 60_000))))
     .returning();
   for (const asset of stale) await enqueue("purge_media", asset.key, { key: asset.key }, { teamId: asset.teamId });
+  const recovered = await recoverMirrors();
   const ran = await runJobs(200);
-  return NextResponse.json({ due: due.length, pending: pending.length, stale: stale.length, ran });
+  return NextResponse.json({ due: due.length, pending: pending.length, stale: stale.length, recovered, ran });
 }
 
 function sameSecret(given: string, secret: string): boolean {

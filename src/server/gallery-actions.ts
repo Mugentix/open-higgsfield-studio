@@ -109,6 +109,7 @@ function readFilter(value: unknown): GalleryFilter {
   const number = (key: string) => (typeof record[key] === "number" && Number.isFinite(record[key]) ? (record[key] as number) : undefined);
   return {
     view,
+    ...(["running", "completed", "failed"].includes(String(record.status)) ? { status: record.status as GalleryFilter["status"] } : {}),
     ...(typeof record.projectId === "string" ? { projectId: record.projectId } : {}),
     ...(typeof record.productId === "string" ? { productId: record.productId } : {}),
     ...(strings("modelIds")?.length ? { modelIds: strings("modelIds") } : {}),

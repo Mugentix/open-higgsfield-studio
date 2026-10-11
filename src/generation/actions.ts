@@ -99,10 +99,8 @@ export async function submitGeneration(data: unknown): Promise<ActionResult<Crea
   });
 }
 
-/** Every run in flight, answered in one round trip. Next dispatches server
-    actions one at a time per client, so a poll per run would queue ahead of the
-    next submit — the fan-out belongs on this side of the call. The rows are
-    read first; only runs due a look ask KIE. */
+/** One database read for the in-flight runs. Provider requests and media
+    copies are queued for after the response so they cannot hold up the UI. */
 export async function getGenerationStatuses(data: unknown): Promise<ActionResult<RunView[]>> {
   return guarded(async () => {
     const team = await requireTeam();
