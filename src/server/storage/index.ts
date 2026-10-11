@@ -32,6 +32,12 @@ export function mediaStore(): MediaStore {
   return (globalThis.__ohfStore ??= open());
 }
 
+/** Stored keys stay valid when a media domain is corrected. Old result rows
+    may still contain URLs written before the public base was normalized. */
+export function resultUrl(result: { key: string | null; url: string | null; sourceUrl: string | null }): string | null {
+  return result.key ? mediaStore().publicUrl(result.key) : result.url ?? result.sourceUrl;
+}
+
 function open(): MediaStore {
   const accountId = process.env.R2_ACCOUNT_ID?.trim();
   const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
