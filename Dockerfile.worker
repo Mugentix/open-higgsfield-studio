@@ -1,0 +1,42 @@
+# The agent worker: Node for the loop and the Claude Agent SDK, Python with the
+# libraries the owner's skills import, ffmpeg and Whisper for the cut and the
+# QC passes. Build from the repo root:
+#
+#   docker build -f Dockerfile.worker -t studio-agent-worker .
+#   docker run --env-file .env.worker -v agent-homes:/data/agent-homes studio-agent-worker
+#
+# The container needs DATABASE_URL, ANTHROPIC_API_KEY and the R2_* variables
+# (see docs/agent-worker.md); the media store must be R2 here, since a local
+# store would live in the web app's .data, not in this container.
+
+FROM node:22-bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ffmpeg git ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Whisper pulls torch; the CPU wheel keeps the image a few GB smaller.
+RUN python3 -m venv /opt/venv \
+  && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+  && /opt/venv/bin/pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+  && /opt/venv/bin/pip install --no-cache-dir httpx higgsfield-client openai-whisper pillow numpy
+ENV PATH="/opt/venv/bin:${PATH}"
+
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN corepack pnpm install --frozen-lockfile --prod=false
+
+COPY tsconfig.json ./
+COPY src ./src
+COPY drizzle ./drizzle
+COPY worker ./worker
+
+# Skills run as this user, never as root; their HOMEs live under /data.
+RUN useradd --create-home --uid 10001 agent && mkdir -p /data/agent-homes && chown -R agent:agent /data /app
+USER agent
+ENV NODE_ENV=production
+ENV AGENT_HOME_ROOT=/data/agent-homes
+ENV AGENT_WORKER_CONCURRENCY=2
+
+CMD ["corepack", "pnpm", "exec", "tsx", "worker/main.ts"]

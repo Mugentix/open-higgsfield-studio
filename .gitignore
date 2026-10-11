@@ -1,0 +1,15 @@
+node_modules
+.DS_Store
+.next
+out
+dist
+*.local
+.env
+.env.*
+!.env.example
+.vercel
+tsconfig.tsbuildinfo
+
+.idea
+.claude/
+.data/
