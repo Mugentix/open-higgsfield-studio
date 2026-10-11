@@ -1,7 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseRecord } from "@/generation/kie/client";
+import { createKieClient, parseRecord } from "@/generation/kie/client";
 import { toStatus } from "@/generation/platform";
+
+afterEach(() => vi.useRealTimers());
+
+it("releases a worker when a KIE status request never answers", async () => {
+  vi.useFakeTimers();
+  const client = createKieClient({ apiKey: "test", fetch: async (_input, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+  }) });
+  let failure: unknown;
+  const waiting = client.recordInfo("existing-task").catch((error) => { failure = error; });
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(failure).toMatchObject({ name: "TimeoutError" });
+  await waiting;
+});
 
 describe("recordInfo parsing", () => {
   it("reads resultJson as a JSON string and folds success into completed", () => {

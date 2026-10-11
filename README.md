@@ -437,6 +437,12 @@ AGENT_DEV_WORKER=                     # 1 hosts the worker's loop inside pnpm de
 | `pnpm brand` | Rebuild the icons and OG card in `public/` |
 | `pnpm agent-worker` | Runs the agent worker (`docs/agent-worker.md`); `AGENT_RUNTIME=fake` replays a scripted run |
 
+The queue also has production-driver integration tests. Start a disposable local
+PostgreSQL database whose name ends in `_test`, then run
+`POSTGRES_TEST_URL=postgresql://user@127.0.0.1:5432/studio_test pnpm test tests/server/jobs.postgres.test.ts`.
+These tests clear jobs and runs in that test database and stub KIE, so they do not
+buy generations. They are skipped when `POSTGRES_TEST_URL` is unset.
+
 ---
 
 ## Layout

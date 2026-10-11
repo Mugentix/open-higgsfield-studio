@@ -22,7 +22,10 @@ import type { RunRecord } from "./history";
    that rides the same cadence as the run poll. Every tile the studio draws
    comes from here; the browser keeps nothing of its own any more. */
 
-export const SYNC_INTERVAL_MS = 4000;
+// Active runs have their own status watcher. The team-wide change feed only
+// needs to pick up teammates' work and saved copies, not wake a function 900
+// times an hour while someone leaves an idle gallery open.
+export const SYNC_INTERVAL_MS = 30_000;
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({

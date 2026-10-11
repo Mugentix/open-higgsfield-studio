@@ -6,6 +6,7 @@ import path from "node:path";
 import { vi } from "vitest";
 
 import * as schema from "@/server/db/schema";
+import type { Db } from "@/server/db/client";
 import type { MediaStore, PresignedPut } from "@/server/storage";
 import type { TeamContext } from "@/server/team";
 
@@ -62,7 +63,7 @@ export function useMemoryStore(options: { public?: boolean } = {}): MemoryStore 
 
 /** A user, a team and a membership, straight into the tables Better Auth owns. */
 export async function seedTeam(
-  db: TestDb,
+  db: Db,
   options: { name?: string; email?: string; role?: "owner" | "admin" | "member" } = {},
 ): Promise<TeamContext> {
   const userId = randomUUID();

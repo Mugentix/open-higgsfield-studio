@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 
 import { getModel, parseSettings, type GenerationPlane } from "@/generation/catalog";
 import { KieError, createKieClient, type KieRecord } from "@/generation/kie/client";
@@ -702,27 +702,24 @@ export async function purgeMedia(key: string): Promise<void> {
 /** Return database state promptly; slow provider calls run after the response.
     An open tab still hurries reconciliation, without blocking gallery actions. */
 export async function syncRuns(team: TeamContext, runIds: string[]): Promise<RunView[]> {
-  const due = await db.query.runs.findMany({
-    where: and(
-      eq(schema.runs.teamId, team.teamId),
-      inArray(schema.runs.id, runIds),
-      eq(schema.runs.status, "submitted"),
-      lte(schema.runs.nextPollAt, new Date()),
-    ),
-    orderBy: asc(schema.runs.nextPollAt),
-    limit: SYNC_REFRESH_BUDGET,
-  });
-  await Promise.all(due.map((run) => enqueue("reconcile_run", run.id, { runId: run.id }, { teamId: run.teamId })));
-  const pending = await db.query.runs.findMany({
-    where: and(eq(schema.runs.teamId, team.teamId), inArray(schema.runs.id, runIds), openForSubmit()),
-    limit: SYNC_REFRESH_BUDGET,
-  });
-  await Promise.all(pending.map((run) => enqueue("submit_run", run.id, { runId: run.id }, { teamId: run.teamId })));
-
   const runs = await db.query.runs.findMany({
     where: and(eq(schema.runs.teamId, team.teamId), inArray(schema.runs.id, runIds)),
     with: { results: { orderBy: asc(schema.results.index) } },
   });
+  // The bounded set needed for the response also tells us which runs are due;
+  // avoid two more database round trips on every browser status poll.
+  const now = Date.now();
+  const due = runs
+    .filter((run) => run.status === "submitted" && run.nextPollAt && run.nextPollAt.getTime() <= now)
+    .sort((a, b) => a.nextPollAt!.getTime() - b.nextPollAt!.getTime())
+    .slice(0, SYNC_REFRESH_BUDGET);
+  const pending = runs
+    .filter((run) => run.status === "pending" || (run.status === "submitting" && run.updatedAt.getTime() < now - SUBMIT_CLAIM_STALE_MS))
+    .slice(0, SYNC_REFRESH_BUDGET);
+  await Promise.all([
+    ...due.map((run) => enqueue("reconcile_run", run.id, { runId: run.id }, { teamId: run.teamId })),
+    ...pending.map((run) => enqueue("submit_run", run.id, { runId: run.id }, { teamId: run.teamId })),
+  ]);
   return runs.map(viewOf);
 }
 
