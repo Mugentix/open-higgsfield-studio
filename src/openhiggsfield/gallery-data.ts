@@ -10,8 +10,9 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { GalleryCursor, GalleryFilter, GalleryItem } from "@/server/gallery";
 import { CHANGE_OVERLAP_MS, compareChangeCursor, type ChangeCursor } from "@/server/gallery-cursor";
-import { listGallery, removeResults, restoreRemoved, setFavorite, setNote, setVerdict, syncGallery } from "@/server/gallery-actions";
+import { removeResults, restoreRemoved, setFavorite, setNote, setVerdict } from "@/server/gallery-actions";
 import { unwrap } from "@/server/result";
+import { readStudio } from "./studio-read";
 
 import { artFor } from "./artwork";
 import type { Verdict } from "./data";
@@ -134,8 +135,8 @@ export function useGallery(filter: GalleryFilter, options: { enabled?: boolean; 
     enabled: options.enabled,
     refetchOnMount: options.sync === false ? "always" : true,
     queryKey: key,
-    queryFn: async ({ pageParam }) => {
-      const page = unwrap(await listGallery({ filter, cursor: pageParam }));
+    queryFn: async ({ pageParam, signal }) => {
+      const page = unwrap(await readStudio("gallery", { filter, cursor: pageParam }, signal));
       origin(page.at);
       return page as Page;
     },
@@ -186,7 +187,7 @@ export function useGallery(filter: GalleryFilter, options: { enabled?: boolean; 
       const sent = since.current;
       if (document.visibilityState === "visible" && sent) {
         try {
-          const result = await syncGallery({ since: sent });
+          const result = await readStudio("changes", { since: sent });
           if (result.ok && live) {
             if (result.data.items.length) patch(result.data.items);
             /* A page read meanwhile may have pulled the origin back; never skip past it. */

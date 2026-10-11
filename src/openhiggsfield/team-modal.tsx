@@ -2,13 +2,11 @@
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
-import { clearTeamKey, getCredits, getKeyStatus, saveTeamKey, type KeyStatus } from "@/generation/actions";
+import { clearTeamKey, saveTeamKey, type KeyStatus } from "@/generation/actions";
 import type { SpendLine, SpendReport } from "@/server/spend";
-import { getSpend } from "@/server/spend-actions";
 import { DEFAULT_SPEND_DAYS, SPEND_PERIODS, type SpendDays } from "@/server/spend-periods";
 import {
   cancelInvitation,
-  getTeamOverview,
   inviteMember,
   removeMember,
   setMemberRole,
@@ -18,6 +16,7 @@ import {
 import type { Role } from "@/server/team";
 
 import { CloseIcon } from "./icons";
+import { readStudio } from "./studio-read";
 
 const ROLE_LABELS: Record<Role, string> = { owner: "Owner", admin: "Admin", member: "Member" };
 
@@ -57,7 +56,7 @@ export function TeamModal({
   }, []);
 
   async function reload() {
-    const [overview, status] = await Promise.all([getTeamOverview(), getKeyStatus()]);
+    const [overview, status] = await Promise.all([readStudio("team"), readStudio("key-status")]);
     if (overview.ok) setTeam(overview.data);
     else setError(overview.error);
     if (status.ok) setKey(status.data);
@@ -243,12 +242,12 @@ function SpendSection() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getCredits().then((result) => setBalance(result.ok ? result.data : null));
+    void readStudio("credits").then((result) => setBalance(result.ok ? result.data : null));
   }, []);
 
   useEffect(() => {
     let current = true;
-    void getSpend({ days }).then((result) => {
+    void readStudio("spend", { days }).then((result) => {
       if (!current) return;
       if (result.ok) {
         setReport(result.data);

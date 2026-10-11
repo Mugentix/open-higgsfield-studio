@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getKeyStatus, submitGeneration, type KeyStatus } from "@/generation/actions";
+import { submitGeneration, type KeyStatus } from "@/generation/actions";
 import { ROLE_WORDS, attachInput, useTargetsFor } from "@/generation/attach";
 import { MODELS, getModel, parseSettings, resolveModelId } from "@/generation/catalog";
 import type { GenerationPlane, MediaRole, Surface } from "@/generation/catalog";
@@ -17,9 +17,8 @@ import { useImagePrompt, useVideoPrompt } from "@/generation/stores/prompt";
 import { useSettings } from "@/generation/stores/settings";
 import type { RunView } from "@/generation/views";
 import type { GalleryFilter, GalleryItem } from "@/server/gallery";
-import { getGalleryFacets } from "@/server/gallery-actions";
 import { setAssetProduct } from "@/server/asset-actions";
-import { getWorkspace, type Workspace } from "@/server/project-actions";
+import type { Workspace } from "@/server/project-actions";
 import { ActionError, unwrap } from "@/server/result";
 import { replayRun } from "@/server/run-actions";
 
@@ -54,6 +53,7 @@ import { openTemplates } from "./prompt-templates";
 import { SelectionBar, type SaveProgress } from "./selection-bar";
 import { Shortcuts } from "./shortcuts";
 import { Sidebar, type SidebarHandle } from "./sidebar";
+import { readStudio } from "./studio-read";
 import { TeamModal } from "./team-modal";
 import { Topbar } from "./topbar";
 import { Viewer } from "./viewer";
@@ -248,7 +248,7 @@ export function OpenHiggsfieldApp({ fontClassName = "", viewer, initialView }: {
 
   /* Products and projects, and the project a fresh session lands in. */
   const loadWorkspace = useCallback(async () => {
-    const result = await getWorkspace();
+    const result = await readStudio("workspace");
     if (!result.ok) {
       bounceIfSignedOut(new ActionError(result.error, result.code));
       return;
@@ -268,7 +268,7 @@ export function OpenHiggsfieldApp({ fontClassName = "", viewer, initialView }: {
   useEffect(() => {
     if (!projectId) return;
     let live = true;
-    void getGalleryFacets({ projectId }).then((result) => {
+    void readStudio("facets", { projectId }).then((result) => {
       if (live && result.ok) setFacets(result.data);
     });
     return () => {
@@ -277,7 +277,7 @@ export function OpenHiggsfieldApp({ fontClassName = "", viewer, initialView }: {
   }, [projectId, items.length, facetsNonce]);
 
   useEffect(() => {
-    void getKeyStatus().then((result) => {
+    void readStudio("key-status").then((result) => {
       if (!result.ok) {
         bounceIfSignedOut(new ActionError(result.error, result.code));
         return;

@@ -12,9 +12,10 @@ import { getModel } from "@/generation/catalog";
 import { createRun } from "@/server/runs";
 import { schema } from "@/server/db/client";
 import { requireTeam } from "@/server/team";
+import { GET } from "@/app/api/studio/[resource]/route";
 import { envForTests, resetStubs, seedTeam, stubKie, useMemoryStore, useTestDatabase } from "../server/harness";
 
-// Replace only session lookup; the picker reads the real database through its action.
+// Replace session and HTTP boundaries; the picker reads through the real route and database.
 vi.mock("@/server/team", () => ({ requireTeam: vi.fn() }));
 vi.setConfig({ testTimeout: 30_000 });
 afterEach(() => { cleanup(); resetStubs(); });
@@ -29,6 +30,15 @@ it("attaches a generated image to a video without relying on the visible gallery
   stubKie();
   const team = await seedTeam(db);
   vi.mocked(requireTeam).mockResolvedValue(team);
+  const providerFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    if (typeof input === "string" && input.startsWith("/api/studio/")) {
+      const url = new URL(input, "http://localhost");
+      // The server receives its own Request, not jsdom's browser AbortSignal.
+      return GET(new Request(url), { params: Promise.resolve({ resource: url.pathname.split("/").pop()! }) });
+    }
+    return providerFetch(input, init);
+  });
   const run = await createRun(team, {
     idempotencyKey: "reference",
     plane: { model: "nano-banana-pro", prompt: { text: "Saved reference" }, media: {}, settings: {} },

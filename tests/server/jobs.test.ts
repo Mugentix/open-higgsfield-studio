@@ -92,6 +92,9 @@ describe("enqueue", () => {
     const [job] = await claim(1, "w1");
     if (terminal === "done") await complete(job!.id);
     else expect(await fail({ ...job!, attempts: job!.maxAttempts }, "gave up")).toBe("dead");
+    // A prior attempt predates its retry; don't rely on wall time advancing
+    // between two statements that can complete in the same millisecond.
+    await db.update(schema.jobs).set({ updatedAt: new Date(0) }).where(eq(schema.jobs.id, job!.id));
     const before = await jobRow("purge_media", "a");
     expect(before.status).toBe(terminal);
     expect(before.attempts).toBe(terminal === "done" ? 1 : 1);

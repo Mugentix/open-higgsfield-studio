@@ -17,7 +17,7 @@ import {
 import { useLayout } from "@/generation/stores/layout";
 import { archiveProject, createProduct, createProject, renameProject, type Workspace } from "@/server/project-actions";
 import type { SpendReport } from "@/server/spend";
-import { getSpend } from "@/server/spend-actions";
+import { readStudio } from "./studio-read";
 import { DEFAULT_SPEND_DAYS } from "@/server/spend-periods";
 import type { Role } from "@/server/team";
 
@@ -319,7 +319,7 @@ export function Sidebar({
   useEffect(() => {
     if (busy) return;
     let live = true;
-    void getSpend({ days: DEFAULT_SPEND_DAYS }).then((result) => {
+    void readStudio("spend", { days: DEFAULT_SPEND_DAYS }).then((result) => {
       if (live && result.ok) setSpend(result.data);
     });
     return () => {
