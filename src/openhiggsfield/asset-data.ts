@@ -3,8 +3,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { listAssets, type AssetRecord } from "@/server/asset-actions";
+import type { AssetRecord } from "@/server/asset-actions";
 import { unwrap } from "@/server/result";
+import { readStudio } from "./studio-read";
 
 /* The team's uploads, read from the server: what one member sends from a
    laptop is on every teammate's shelf a moment later. */
@@ -15,7 +16,7 @@ export function useAssets() {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ASSETS_KEY,
-    queryFn: async () => unwrap(await listAssets({})),
+    queryFn: async ({ signal }) => unwrap(await readStudio("assets", {}, signal)),
     staleTime: 15_000,
   });
   const refresh = useCallback(() => void client.invalidateQueries({ queryKey: ASSETS_KEY }), [client]);

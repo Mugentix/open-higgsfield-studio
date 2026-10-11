@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { create } from "zustand";
 
 import type { Surface } from "@/generation/catalog";
-import { createTemplate, deleteTemplate, listTemplates, useTemplate as recordTemplateUse } from "@/server/template-actions";
+import { createTemplate, deleteTemplate, useTemplate as recordTemplateUse } from "@/server/template-actions";
+import { readStudio } from "./studio-read";
 import type { PromptTemplate } from "@/server/templates";
 
 import { CloseIcon, PlusIcon, SearchIcon, TrashIcon } from "./icons";
@@ -133,7 +134,7 @@ export function TemplatesPopover({
 
   useEffect(() => {
     let live = true;
-    void listTemplates({ productId: productId ?? undefined }).then((result) => {
+    void readStudio("templates", { productId: productId ?? undefined }).then((result) => {
       if (!live) return;
       if (result.ok) setTemplates(result.data);
       else setError(result.error);
@@ -230,7 +231,7 @@ export function TemplatesPopover({
     setBusy(false);
     const failed = results.find((result) => !result.ok);
     if (failed && !failed.ok) setError(failed.error);
-    const listed = await listTemplates({ productId: productId ?? undefined });
+    const listed = await readStudio("templates", { productId: productId ?? undefined });
     if (listed.ok) setTemplates(listed.data);
     if (!failed) note(`${STARTER_TEMPLATES.length} starters added to the team library`);
   }

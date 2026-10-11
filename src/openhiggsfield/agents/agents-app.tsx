@@ -3,10 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { getKeyStatus } from "@/generation/actions";
 import { useActive } from "@/generation/stores/active";
 import { useLayout } from "@/generation/stores/layout";
-import { getWorkspace, type Workspace } from "@/server/project-actions";
+import type { Workspace } from "@/server/project-actions";
 
 import { GRAIN_URI } from "../artwork";
 import type { GalleryView } from "../data";
@@ -14,6 +13,7 @@ import { hotkeysQuiet } from "../hotkeys";
 import type { Viewer } from "../openhiggsfield-app";
 import { Sidebar } from "../sidebar";
 import { TeamModal } from "../team-modal";
+import { readStudio } from "../studio-read";
 import { AgentsIndex } from "./agents-index";
 import { bounceIfSignedOut } from "./client";
 import { RunView } from "./run-view";
@@ -42,7 +42,7 @@ export function AgentsApp({ fontClassName = "", viewer, runId = null }: { fontCl
   /* Products and projects, and the project a fresh session lands in — the
      same call the studio makes, so the two pages agree on the current one. */
   const loadWorkspace = useCallback(async () => {
-    const result = await getWorkspace();
+    const result = await readStudio("workspace");
     if (!result.ok) {
       bounceIfSignedOut(result.code);
       return;
@@ -58,7 +58,7 @@ export function AgentsApp({ fontClassName = "", viewer, runId = null }: { fontCl
   }, [loadWorkspace]);
 
   useEffect(() => {
-    void getKeyStatus().then((result) => {
+    void readStudio("key-status").then((result) => {
       if (!result.ok) {
         bounceIfSignedOut(result.code);
         return;
