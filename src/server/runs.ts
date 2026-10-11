@@ -10,7 +10,7 @@ import { durationBadge, metaOf, ratioToCss } from "@/openhiggsfield/data";
 import { db, schema } from "./db/client";
 import { enqueue } from "./jobs/queue";
 import { bucketKeyFor, takeToken } from "./rate-limit";
-import { extensionFor, mediaStore, resultKey } from "./storage";
+import { extensionFor, mediaStore, resultKey, resultUrl } from "./storage";
 import { isSafeKey } from "./storage/keys";
 import type { TeamContext } from "./team";
 
@@ -158,7 +158,7 @@ async function resolveInputs(
       ? scratchUrl(credentials, result.key, result.kieUrl, result.kieUrlExpiresAt, (kieUrl, at) =>
           db.update(schema.results).set({ kieUrl, kieUrlExpiresAt: at }).where(eq(schema.results.id, result.id)),
         )
-      : Promise.resolve(result.url ?? result.sourceUrl ?? fallback);
+      : Promise.resolve(resultUrl(result) ?? fallback);
   for (const [role, items] of Object.entries(plane.media)) {
     if (!items) continue;
     const resolved = [];
@@ -738,7 +738,7 @@ export function viewOf(run: RunRow & { results: ResultRow[] }): RunView {
       id: result.id,
       index: result.index,
       status: result.status as ResultView["status"],
-      url: result.url ?? result.sourceUrl ?? null,
+      url: resultUrl(result),
       mirrored: result.mirrorStatus === "done",
       ...(result.error ? { error: result.error } : {}),
     })),

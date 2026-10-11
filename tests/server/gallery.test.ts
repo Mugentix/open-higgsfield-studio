@@ -105,6 +105,22 @@ async function pageAll(team: TeamContext): Promise<GalleryItem[][]> {
   }
 }
 
+it("serves mirrored tiles from their storage key when an old saved URL lacks its scheme", async () => {
+  const team = await seedTeam(db);
+  const [id] = await seedTiles(team, 1, new Date());
+  await db.update(schema.results).set({
+    key: "t/team/result.png",
+    url: "media.test/t/team/result.png",
+    sourceUrl: "https://expired-provider.test/result.png",
+    mirrorStatus: "done",
+  }).where(eq(schema.results.id, id!));
+
+  const page = await listResults(team, { view: "image" }, null);
+  expect(page.items[0]?.urls).toEqual(["https://media.test/t/team/result.png"]);
+  const changes = await listChanges(team, ORIGIN);
+  expect(changes.items[0]?.urls).toEqual(["https://media.test/t/team/result.png"]);
+});
+
 it("pages completed references without pending or failed results consuming the page", async () => {
   const team = await seedTeam(db);
   vi.mocked(requireTeam).mockResolvedValue(team);

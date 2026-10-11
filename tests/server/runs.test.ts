@@ -853,6 +853,19 @@ describe("mirrorResult", () => {
 /* ---------- syncRuns ---------- */
 
 describe("syncRuns", () => {
+  it("returns the current storage URL for an already mirrored result with a malformed saved URL", async () => {
+    const team = await seedTeam(db);
+    const created = await press(team, "old-url");
+    await db.update(schema.runs).set({ status: "succeeded" }).where(eq(schema.runs.id, created.requestId));
+    await db.update(schema.results).set({
+      status: "completed", mirrorStatus: "done", key: "t/team/saved.png",
+      url: "media.test/t/team/saved.png", sourceUrl: OUT_1,
+    }).where(eq(schema.results.id, created.resultIds[0]!));
+
+    const [view] = await syncRuns(team, [created.requestId]);
+    expect(view?.results[0]?.url).toBe("https://media.test/t/team/saved.png");
+  });
+
   it("answers the studio while the provider is still waiting to report completion", async () => {
     const team = await seedTeam(db);
     const created = await press(team, "slow-provider");
@@ -972,6 +985,21 @@ describe("syncRuns", () => {
 /* ---------- resolveInputs ---------- */
 
 describe("resolveInputs", () => {
+  it("uses the stored copy as a generation reference despite a malformed saved URL", async () => {
+    const team = await seedTeam(db);
+    const original = await press(team, "original");
+    const resultId = original.resultIds[0]!;
+    await db.update(schema.results).set({
+      status: "completed", mirrorStatus: "done", key: "t/team/reference.png",
+      url: "media.test/t/team/reference.png", sourceUrl: OUT_1,
+    }).where(eq(schema.results.id, resultId));
+
+    await press(team, "reuse", { reference: [{
+      id: "ref", role: "reference", resultId, url: "https://media.test/t/team/reference.png",
+    }] });
+    expect(kie.tasks[1]?.body.input).toMatchObject({ image_input: ["https://media.test/t/team/reference.png"] });
+  });
+
   it("mints a KIE scratch copy for a team asset when the store is private, and reuses it", async () => {
     store = useMemoryStore({ public: false });
     const team = await seedTeam(db);

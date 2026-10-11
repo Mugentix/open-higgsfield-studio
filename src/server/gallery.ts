@@ -5,6 +5,7 @@ import { VERDICT_FILTERS, isVerdict, type Verdict, type VerdictFilter } from "@/
 import { db, schema } from "./db/client";
 import { rows as rawRows } from "./db/sql";
 import type { TeamContext } from "./team";
+import { resultUrl } from "./storage";
 import { CHANGE_OVERLAP_MS, compareChangeCursor, type ChangeCursor } from "./gallery-cursor";
 
 /* The gallery is one table read with the filters a marketer reaches for:
@@ -71,7 +72,7 @@ const DB_NOW = sql`now()`;
 type Row = typeof schema.results.$inferSelect & { author: { name: string; email: string } | null };
 
 export function itemOf(row: Row): GalleryItem {
-  const url = row.url ?? row.sourceUrl;
+  const url = resultUrl(row);
   return {
     id: row.id,
     requestId: row.runId,
