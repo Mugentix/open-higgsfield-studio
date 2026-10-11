@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { envForTests, resetStubs, seedTeam, stubKie, useMemoryStore, useTestDatabase, type TestDb } from "./harness";
@@ -33,6 +33,13 @@ async function pendingRun(team: TeamContext, key: string) {
 }
 
 describe("cron tick", () => {
+  it("reports the failed maintenance stage without exposing the database query", async () => {
+    await db.execute(sql`ALTER TABLE runs RENAME TO unavailable_runs`);
+    const response = await GET(new Request("http://localhost/api/cron/tick"));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Maintenance failed", stage: "find_due_runs", code: "42P01" });
+  });
+
   it("preserves a scheduled copy retry instead of retrying it on every cron tick", async () => {
     const team = await seedTeam(db);
     const kie = stubKie();
