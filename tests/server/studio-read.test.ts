@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/studio/[resource]/route";
 import { requireTeam, UnauthenticatedError } from "@/server/team";
-import { createProduct } from "@/server/project-actions";
+import { createProduct, getWorkspace, updateProduct } from "@/server/project-actions";
 import { envForTests, resetStubs, seedTeam, useMemoryStore, useTestDatabase, type TestDb } from "./harness";
 
 vi.mock("@/server/team", async (original) => ({
@@ -15,6 +15,19 @@ beforeEach(async () => {
   vi.mocked(requireTeam).mockReset();
 });
 afterEach(resetStubs);
+
+it("keeps the existing Inbox while reading current workspace names", async () => {
+  const team = await seedTeam(db);
+  vi.mocked(requireTeam).mockResolvedValue(team);
+  const initial = await getWorkspace();
+  if (!initial.ok) throw new Error(initial.error);
+  const general = initial.data.products.find((product) => product.slug === "general")!;
+  await updateProduct({ productId: general.id, name: "My workspace" });
+  const response = await GET(new Request("http://localhost/api/studio/workspace"), { params: Promise.resolve({ resource: "workspace" }) });
+  const result = await response.json();
+  expect(result.data.defaultProjectId).toBe(initial.data.defaultProjectId);
+  expect(result.data.products).toEqual([expect.objectContaining({ id: general.id, name: "My workspace", projects: [expect.objectContaining({ id: initial.data.defaultProjectId })] })]);
+});
 
 it.each(["workspace", "gallery", "changes", "facets", "assets", "key-status", "team", "templates", "spend", "credits"])("requires a signed-in team for %s reads", async (resource) => {
   vi.mocked(requireTeam).mockRejectedValue(new UnauthenticatedError());

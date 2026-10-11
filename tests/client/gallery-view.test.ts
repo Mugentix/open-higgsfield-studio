@@ -1,12 +1,31 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, renderHook } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 import { galleryKey, makeQueryClient, useGallery, type Pages } from "@/openhiggsfield/gallery-data";
 import type { GalleryFilter, GalleryItem } from "@/server/gallery";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it("limits an idle gallery to one background request per thirty seconds", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const fetch = vi.fn(async (_input: string) => Response.json({ ok: true, data: { items: [], until: { updatedAt: Date.now(), id: "" } } }));
+  vi.stubGlobal("fetch", fetch);
+  const client = makeQueryClient();
+  client.setQueryData<Pages>(galleryKey({ view: "image" }), { pages: [{ items: [], nextCursor: null, at: Date.now() }], pageParams: [null] });
+  const { unmount } = renderHook(() => useGallery({ view: "image" }), {
+    wrapper: ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children),
+  });
+  await act(() => vi.advanceTimersByTimeAsync(29_999));
+  expect(fetch).not.toHaveBeenCalled();
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0]?.[0]).toMatch(/^\/api\/studio\/changes\?/);
+  unmount();
+  client.clear();
+});
 
 it("clears image results immediately when switching to an uncached video gallery", () => {
   const client = makeQueryClient();

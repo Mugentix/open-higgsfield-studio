@@ -72,7 +72,8 @@ export async function enqueue(
       target: [schema.jobs.type, schema.jobs.dedupeKey],
       set: {
         payload,
-        runAfter: sql`CASE WHEN ${schema.jobs.status} = 'running' THEN ${schema.jobs.runAfter} ELSE ${runAfter} END`,
+        // Raw SQL parameters bypass the timestamp column's Date encoder.
+        runAfter: sql`CASE WHEN ${schema.jobs.status} = 'running' THEN ${schema.jobs.runAfter} ELSE ${runAfter.toISOString()} END`,
         status: sql`CASE WHEN ${schema.jobs.status} = 'running' THEN ${schema.jobs.status} ELSE 'queued' END`,
         attempts: sql`CASE WHEN ${schema.jobs.status} IN ('done', 'failed', 'dead') THEN 0 ELSE ${schema.jobs.attempts} END`,
         lastError: null,
@@ -137,7 +138,7 @@ export async function fail(job: Job, error: string, retryAfterMs?: number): Prom
     UPDATE jobs SET
       status = ${dead ? "dead" : "queued"},
       attempts = ${waiting ? sql`GREATEST(attempts - 1, 0)` : sql`attempts`},
-      run_after = ${runAfter},
+      run_after = ${runAfter.toISOString()},
       locked_until = NULL,
       locked_by = NULL,
       last_error = ${error.slice(0, 1000)},

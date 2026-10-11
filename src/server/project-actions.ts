@@ -37,12 +37,20 @@ export type Workspace = {
 export async function getWorkspace(): Promise<ActionResult<Workspace>> {
   return guarded(async () => {
     const team = await requireTeam();
-    const { project } = await ensureDefaultProject(team);
-    const products = await db.query.products.findMany({
+    const readProducts = () => db.query.products.findMany({
       where: and(eq(schema.products.teamId, team.teamId), isNull(schema.products.archivedAt)),
       with: { projects: { where: eq(schema.projects.status, "active"), orderBy: asc(schema.projects.name) } },
       orderBy: asc(schema.products.name),
     });
+    let products = await readProducts();
+    let defaultProjectId = products.find((product) => product.slug === "general")?.projects.find((project) => project.slug === "inbox")?.id;
+    // Existing workspaces already include the default project in this read.
+    // Only first use needs the creation path and a fresh list afterward.
+    if (!defaultProjectId) {
+      const { project } = await ensureDefaultProject(team);
+      defaultProjectId = project.id;
+      products = await readProducts();
+    }
     return {
       products: products.map((product) => ({
         id: product.id,
@@ -60,7 +68,7 @@ export async function getWorkspace(): Promise<ActionResult<Workspace>> {
           lastUsedAt: p.lastUsedAt.getTime(),
         })),
       })),
-      defaultProjectId: project.id,
+      defaultProjectId,
     };
   });
 }

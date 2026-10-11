@@ -62,27 +62,38 @@ export function createKieClient(options: KieClientOptions) {
     body?: BodyInit,
     contentType?: string,
   ): Promise<Record<string, unknown>> {
-    const response = await fetchImpl(url, {
-      method,
-      headers: {
-        Authorization: auth,
-        ...(contentType ? { "Content-Type": contentType } : {}),
-      },
-      ...(body !== undefined ? { body } : {}),
-    });
-    const payload = await readJson(response);
-    const envelope = asRecord(payload);
-    const code = typeof envelope.code === "number" ? envelope.code : response.status;
-    const ok = response.ok && (code === 200 || envelope.success === true);
-    console.info("[kie]", method, new URL(url).pathname, response.status, code);
-    if (!ok) {
-      const msg =
-        typeof envelope.msg === "string" && envelope.msg
-          ? envelope.msg
-          : `KIE request failed (${response.status})`;
-      throw new KieError(response.status, code, msg);
+    // Bound read-only provider calls so a hung status request cannot occupy a
+    // worker indefinitely. A paid createTask POST keeps its existing behavior.
+    const controller = method === "GET" ? new AbortController() : null;
+    const timeout = controller
+      ? setTimeout(() => controller.abort(new DOMException("KIE did not answer within 15 seconds", "TimeoutError")), 15_000)
+      : null;
+    try {
+      const response = await fetchImpl(url, {
+        method,
+        ...(controller ? { signal: controller.signal } : {}),
+        headers: {
+          Authorization: auth,
+          ...(contentType ? { "Content-Type": contentType } : {}),
+        },
+        ...(body !== undefined ? { body } : {}),
+      });
+      const payload = await readJson(response);
+      const envelope = asRecord(payload);
+      const code = typeof envelope.code === "number" ? envelope.code : response.status;
+      const ok = response.ok && (code === 200 || envelope.success === true);
+      console.info("[kie]", method, new URL(url).pathname, response.status, code);
+      if (!ok) {
+        const msg =
+          typeof envelope.msg === "string" && envelope.msg
+            ? envelope.msg
+            : `KIE request failed (${response.status})`;
+        throw new KieError(response.status, code, msg);
+      }
+      return envelope;
+    } finally {
+      if (timeout !== null) clearTimeout(timeout);
     }
-    return envelope;
   }
 
   return {
